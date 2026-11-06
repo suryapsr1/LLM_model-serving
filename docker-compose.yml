@@ -1,0 +1,66 @@
+x-app: &app
+  image: model-serving:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment:
+    REDIS_URL: redis://redis:6379/0
+    LOCAL_MODEL_PATH: /app/models/${MODEL_FILENAME:-Llama-3.2-1B-Instruct-Q4_K_M.gguf}
+    LOCAL_N_CTX: ${LOCAL_N_CTX:-2048}
+    LOCAL_N_THREADS: ${LOCAL_N_THREADS:-4}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+  volumes:
+    - type: bind
+      source: ${MODEL_DIR:-./models}
+      target: /app/models
+      read_only: true
+      bind:
+        create_host_path: false
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).close()"
+      interval: 15s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "app.worker.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    stop_grace_period: 330s
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker.celery_app:celery_app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  redis-data:

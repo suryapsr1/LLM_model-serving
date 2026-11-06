@@ -1,0 +1,15 @@
+venv/
+.venv/
+models/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+.env.*
+.pytest_cache/
+.runtime/
+.git/
+.vscode/
+test_*.py
+tests/
