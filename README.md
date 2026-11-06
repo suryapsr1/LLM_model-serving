@@ -33,6 +33,42 @@ The API health check returns an error if neither inference engine is available. 
 
 For cloud fallback, set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in your local `.env`, then recreate the services with the start command. Cloud requests may incur provider charges. Keep `.env` private. No cloud key is needed for local inference.
 
+## Deploy on Railway
+
+Connect this GitHub repository to an API service and build it with the included
+Dockerfile. The container listens on `0.0.0.0` and uses `PORT`, defaulting to 8000.
+To keep port 8000 on Railway, set the service variable `PORT=8000` and set the
+public domain's target port to 8000 under Settings > Networking. Generate a
+public domain if the service does not have one. Open `https://<your-domain>/docs`
+for the API interface; the root `/` has no page. Public HTTPS uses port 443, so
+do not append `:8000` to the public URL.
+
+Configure an inference engine before enabling the `/healthz` deployment health
+check:
+
+- For the local engine, provision the GGUF model on a Railway volume and set
+  `LOCAL_MODEL_PATH` to its absolute path. The model is excluded from Git and the
+  Docker image; your computer's `models/` directory is not uploaded to Railway.
+  Ensure the container's user (UID 10001) can read the model.
+- Alternatively, set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in
+  Railway's service variables for the OpenAI-compatible cloud engine. Cloud
+  inference may incur provider charges. Select `engine: "cloud"` for batch jobs.
+
+Without either engine, `/healthz` returns 503 and inference is unavailable.
+Use `/healthz` as the health check path once an engine is configured.
+
+Batch jobs also need a Redis service and a separate worker service using the
+same repository/image. Set `REDIS_URL` to the Redis connection URL on both the
+API and worker. Set the worker's start command to
+`celery -A app.worker.celery_app:celery_app worker --loglevel=info --concurrency=1`.
+Configure the inference engine on both services. A local worker also needs
+access to its model file; do not assume it shares the API's volume. Leave the
+worker's HTTP health check unset. Streaming does not require a worker or Redis.
+
+Redeploy after updating source or service variables, then verify `/healthz`,
+`/docs`, and an inference request. A GitHub push alone does not create or connect
+a Railway service.
+
 ## Smoke checks
 
 These requests use the local engine. Change the port if you set `API_PORT`.
